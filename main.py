@@ -4,7 +4,7 @@
 Created on Sat May 31 20:36:03 2014
 Project	:OSU Cookie!! - Make servo works like Cookiez!
 	The work for 10193021 - 孟濬 - 运动控制技术.
-Version	:0.1.0
+Version	:0.1.2
 @author	:Macrobull
 	Teammate: Unix Yu, Catherine Wang
 """
