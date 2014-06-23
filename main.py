@@ -4,7 +4,7 @@
 Created on Sat May 31 20:36:03 2014
 Project	:OSU Cookie!! - Make servo works like Cookiez!
 	The work for 10193021 - 孟濬 - 运动控制技术.
-Version	:0.1.2
+Version	:0.1.4
 @author	:Macrobull
 	Teammate: Unix Yu, Catherine Wang
 """
@@ -16,12 +16,9 @@ import time
 import serial
 from math import *
 
-from macrobull.projCorrection.core import *
-from macrobull.misc import serialChecker, linear
+from macrobull.misc import linear
 
-print hello() # ProjCorrection Library Test
-
-capture = cv.CaptureFromCAM(1)
+capture = cv.CaptureFromCAM(2)
 
 ########### Target screen size (16/9) ####################
 SCR_LEN = 320
@@ -68,17 +65,29 @@ rectContCredit = 70
 ############## Debug ##################
 
 DEBUG_TIME = False
+#DEBUG_TIME = True
 
-############### Initial serial interface #################
+###################### Initialize Correction Library ########
+try:
+	coreAvailable = 1
+	from macrobull.projCorrection.core import *
+	print hello() # ProjCorrection Library Test
+except BaseException:
+	print "Using OpenCV internal correction method"
+	coreAvailable = 0
+
+############### Initialize serial interface #################
 
 #ser = serial.Serial("COM6", 115200, timeout = 1) #For Windows
 try:
+	from macrobull.misc import serialChecker
 	dev = serialChecker(True, 'USB','AMA','ACM') #For *nix
 	ser = serial.Serial(dev, 9600, timeout = 1)  #For Linux kernel ACM reset
 	ser.close()
 	ser = serial.Serial(dev, 115200, timeout = 1)
 except BaseException:
 	ser = None  #Fallback to offline mode
+
 
 ################### Initialize ######################
 
@@ -88,6 +97,7 @@ circles = []
 xmap = [0] * SCR_LEN * SCR_WID
 ymap = [0] * SCR_LEN * SCR_WID
 counter = 1
+img2 = np.zeros((SCR_WID, SCR_LEN,3), dtype = np.uint8)
 
 def timeElps(s): # Time benchmark for debug
 	if DEBUG_TIME: print s+ '\t', time.time() - tStart
@@ -146,6 +156,30 @@ def display_queue(): # Show all circles in queue for debug
 		cv2.circle(img2,(c[0], c[1]), 2, (cirScoreMax - c[3], i * 256 / l, 255), 3)
 
 
+def correctMethod0():
+		global img2
+		src = [p0, p1, p2, p3]
+		dst = [(0,0),(0,SCR_WID),(SCR_LEN,SCR_WID),(SCR_LEN,0)]
+		src = np.array(src, dtype = "float32")
+		dst = np.array(dst, dtype = "float32")
+		M = cv2.getPerspectiveTransform(src, dst)
+		timeElps("Built:")
+
+		img2 = cv2.warpPerspective(img, M, (SCR_LEN, SCR_WID))
+		timeElps("Remapped:")
+
+if coreAvailable:
+	def correctMethod1():
+			global img2
+			build2(xmap, ymap, SCR_LEN, SCR_WID, p0[0], p0[1], p1[0], p1[1], p2[0], p2[1], p3[0], p3[1], 0) # Implemented in macrobull/projCorrection/core.c for performance, model provided by Catherine. W.
+			timeElps("Built:")
+			img2 = img[ymap, xmap].reshape((SCR_WID, SCR_LEN, 3)) # Remapping image
+			#cv2.remap(img, img2, xmap, ymap, 0)
+			timeElps("Remapped:")
+else:
+	correctMethod1 = correctMethod0
+
+
 while 1: # Main loop
 
 	tStart = time.time()
@@ -157,7 +191,8 @@ while 1: # Main loop
 
 	################ Find color presets ##################
 
-	inr = cv2.inRange(hsv, (90,90,00), (140,255,255)) #blue
+	#inr = cv2.inRange(hsv, (90,90,00), (140,255,255)) #blue
+	inr = cv2.inRange(hsv, (110,90,00), (140,255,255)) #blue
 	#inr = cv2.inRange(img, (220,20,20), (255, 255,200)) # blue
 	#inr = cv2.inRange(img, (0,0,0), (60, 40, 40)) #black
 	#inr = cv2.inRange(img, (200,200,200), (255, 255, 255)) #white
@@ -170,8 +205,8 @@ while 1: # Main loop
 
 
 	###################### Find color output #####################
-	cv2.imshow("HSV", hsv)
-	cv2.imshow("inRange", inr)
+	#cv2.imshow("HSV", hsv)
+	#cv2.imshow("inRange", inr)
 
 
 	cont, hier = cv2.findContours(inr, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE) # Find the contour of the quadrangle of screen
@@ -210,11 +245,8 @@ while 1: # Main loop
 		#print ""
 
 		####################### Correction to rectangle ###################
-		#xmap, ymap = build(SCR_LEN, SCR_WID, p0[0], p0[1], p1[0], p1[1], p2[0], p2[1], p3[0], p3[1], 0)
-		build2(xmap, ymap, SCR_LEN, SCR_WID, p0[0], p0[1], p1[0], p1[1], p2[0], p2[1], p3[0], p3[1], 0) # Implemented in macrobull/projCorrection/core.c for performance, model provided by Catherine. W.
-		timeElps("Built:")
-		img2 = img[ymap, xmap].reshape((SCR_WID, SCR_LEN, 3)) # Remapping image
-		timeElps("Corrected:")
+		#correctMethod1()
+		correctMethod0()
 
 		cv2.drawContours(img, [approx], 0, (0,255,0), 3) # Draw the quadrangle for debug
 		#cv2.imshow('img2',img2)
